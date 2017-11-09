@@ -74,17 +74,13 @@ data Result vec sca = Result
   } deriving (Read,Show,Eq,Ord)
 
 -- | Convert a Result to a confidence interval
--- confidence :: (InnerSpace vec, Scalar vec ~ Double) =>
---               Result vec -> (vec, vec)
--- confidence (Result a b _) = (a ^* (1 - ba), a ^* (1 + ba))
---     where ba = b / magnitude a
-confidence :: (InnerSpace vec, sca ~ Scalar vec, Floating sca) =>
+-- (This is only possible if the integrand is real.)
+confidence :: (InnerSpace vec, RealFloat vec, sca ~ Scalar vec, RealFloat sca) =>
               Result vec sca -> (vec, vec)
-confidence (Result a b _) = (a ^* (1 - ba), a ^* (1 + ba))
-    where ba = b / magnitude a
+confidence (Result a b _) = (a - realToFrac b, a + realToFrac b)
 
 -- | Filter a list of results using a specified absolute error bound
-absolute :: (VectorSpace vec, sca ~ Scalar vec, Fractional sca, Num sca, Ord sca) =>
+absolute :: (VectorSpace vec, sca ~ Scalar vec, Fractional sca, Ord sca) =>
             sca -> [Result vec sca] -> Result vec sca
 absolute targetError = go where
   go [] = error "no result"
