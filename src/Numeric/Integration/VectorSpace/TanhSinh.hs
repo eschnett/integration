@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE TypeFamilies #-}
 -----------------------------------------------------------------------------
@@ -66,21 +67,25 @@ import Data.VectorSpace
 -- | Integral with an result and an estimate of the error such that
 -- @(result - errorEstimate, result + errorEstimate)@ /probably/ bounds 
 -- the actual answer.
-data Result vDouble = Result
-  { result        :: {-# UNPACK #-} !vDouble
-  , errorEstimate :: {-# UNPACK #-} !Double -- L2 norm
+data Result vec sca = Result
+  { result        :: {-# UNPACK #-} !vec
+  , errorEstimate :: {-# UNPACK #-} !sca -- L2 norm
   , evaluations   :: {-# UNPACK #-} !Int
   } deriving (Read,Show,Eq,Ord)
 
 -- | Convert a Result to a confidence interval
-confidence :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-              Result vDouble -> (vDouble, vDouble)
+-- confidence :: (InnerSpace vec, Scalar vec ~ Double) =>
+--               Result vec -> (vec, vec)
+-- confidence (Result a b _) = (a ^* (1 - ba), a ^* (1 + ba))
+--     where ba = b / magnitude a
+confidence :: (InnerSpace vec, sca ~ Scalar vec, Floating sca) =>
+              Result vec sca -> (vec, vec)
 confidence (Result a b _) = (a ^* (1 - ba), a ^* (1 + ba))
     where ba = b / magnitude a
 
 -- | Filter a list of results using a specified absolute error bound
-absolute :: (VectorSpace vDouble, Scalar vDouble ~ Double) =>
-            Double -> [Result vDouble] -> Result vDouble
+absolute :: (VectorSpace vec, sca ~ Scalar vec, Fractional sca, Num sca, Ord sca) =>
+            sca -> [Result vec sca] -> Result vec sca
 absolute targetError = go where
   go [] = error "no result"
   go [r] = r
@@ -89,8 +94,8 @@ absolute targetError = go where
     | otherwise = absolute targetError rs
 
 -- | Filter a list of results using a specified relative error bound
-relative :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-            Double -> [Result vDouble] -> Result vDouble
+relative :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Num sca, Ord sca) =>
+            sca -> [Result vec sca] -> Result vec sca
 relative _ [] = error "no result"
 relative _ [r] = r
 relative targetError (r'@(Result a _ _):rs') = go a r' rs' where
@@ -106,9 +111,9 @@ m_huge = 1/0 -- 1.7976931348623157e308
 -- | Integrate a function from 0 to infinity by using the change of variables @x = t/(1-t)@
 --
 -- This works /much/ better than just clipping the interval at some arbitrary large number.
-nonNegative :: (VectorSpace vDouble, Scalar vDouble ~ Double) =>
-               ((Double -> vDouble) -> Double -> Double -> r) -> (Double -> vDouble) -> r
-nonNegative method f = method (\t -> f(t/(1-t))^/square(1-t)) 0 1 where
+nonNegative :: (VectorSpace vec, sca ~ Scalar vec, Fractional sca) =>
+               ((Double -> vec) -> Double -> Double -> r) -> (Double -> vec) -> r
+nonNegative method f = method (\t -> f(t/(1-t))^/realToFrac(square(1-t))) 0 1 where
   square x = x * x
 
 -- | Integrate from -inf to inf using tanh-sinh quadrature after using the change of variables @x = tan t@
@@ -125,9 +130,9 @@ everywhere method f = method (\t -> let tant = tan t in f tant * (1 + tant * tan
 #endif
 
 -- | Integration using a truncated trapezoid rule and tanh-sinh quadrature with a specified evaluation strategy
-trap' :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-         Strategy [vDouble] -> (Double -> vDouble) -> Double -> Double -> [Result vDouble]
-trap' nf f a b = go (0 :: Int) (i0^+^i1) (magnitude (i1^-^i0)) m_huge dd where
+trap' :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+         Strategy [vec] -> (Double -> vec) -> Double -> Double -> [Result vec sca]
+trap' nf f a b = go (0 :: Int) (i0^+^i1) (magnitude (i1^-^i0)) (realToFrac m_huge) dd where
   go !k !t !old_delta !err (ds:dds) = res t' err' k : go (k+1) t' delta err' dds
     where
       !ht' = tr ds
@@ -138,27 +143,27 @@ trap' nf f a b = go (0 :: Int) (i0^+^i1) (magnitude (i1^-^i0)) m_huge dd where
             | r <- logBase old_delta delta, 1.99 < r && r < 2.01 = delta*delta
             | otherwise                                          = delta
   go !k !t !_ !err [] = [res t err k]
-  res i e k = Result (i^*c) (e*c) (1 + 12*(2^k))
+  res i e k = Result (i^*realToFrac c) (e*realToFrac c) (1 + 12*(2^k))
   c  = 0.5 * (b - a)
   d  = 0.5 * (a + b)
-  i0 = w0 *^ f d ^+^ tr dd0
+  i0 = realToFrac w0 *^ f d ^+^ tr dd0
   i1 = tr dd1
-  tr xs = foldl' (^+^) zeroV (map (\(DD i w) -> let !ci = c * i in w*^(f(d+ci)^+^f(d-ci))) xs `using` nf)
+  tr xs = foldl' (^+^) zeroV (map (\(DD i w) -> let !ci = c * i in realToFrac w*^(f(d+ci)^+^f(d-ci))) xs `using` nf)
 
 -- | Integration using a truncated trapezoid rule under tanh-sinh quadrature
-trap :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-        (Double -> vDouble) -> Double -> Double -> [Result vDouble]
+trap :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+        (Double -> vec) -> Double -> Double -> [Result vec sca]
 trap = trap' r0
 
 -- | Integration using a truncated trapezoid rule under tanh-sinh quadrature with buffered parallel evaluation
-parTrap :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-           (Double -> vDouble) -> Double -> Double -> [Result vDouble]
+parTrap :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+           (Double -> vec) -> Double -> Double -> [Result vec sca]
 parTrap = trap' (parBuffer 32 rseq)
 
 -- | Integration using a truncated Simpson's rule under tanh-sinh quadrature with a specified evaluation strategy
-simpson' :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-            Strategy [vDouble] -> (Double -> vDouble) -> Double -> Double -> [Result vDouble]
-simpson' nf f a b = go (0 :: Int) i01 (i01^*(4/3)) (magnitude (i1^-^i0)) m_huge dd where
+simpson' :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+            Strategy [vec] -> (Double -> vec) -> Double -> Double -> [Result vec sca]
+simpson' nf f a b = go (0 :: Int) i01 (i01^*(4/3)) (magnitude (i1^-^i0)) (realToFrac m_huge) dd where
   go !k !t !s !old_delta !err (ds:dds) = res s' err' k : go (k+1) t' s' delta err' dds
     where
       !ht' = tr ds
@@ -170,22 +175,22 @@ simpson' nf f a b = go (0 :: Int) i01 (i01^*(4/3)) (magnitude (i1^-^i0)) m_huge 
             | r <- logBase old_delta delta, 1.99 < r && r < 2.01 = delta*delta
             | otherwise                                          = delta
   go !k _ !s !_ !err [] = [res s err k]
-  res i e k = Result (i^*c) (e*c) (1 + 12*(2^k))
+  res i e k = Result (i^*realToFrac c) (e*realToFrac c) (1 + 12*(2^k))
   c  = 0.5 * (b - a)
   d  = 0.5 * (a + b)
-  i0 = w0 *^ f d ^+^ tr dd0
+  i0 = realToFrac w0 *^ f d ^+^ tr dd0
   i1 = tr dd1
   i01 = i0 ^+^ i1
-  tr xs = foldl' (^+^) zeroV (map (\(DD i w) -> let !ci = c * i in w*^(f(d+ci)^+^f(d-ci))) xs `using` nf)
+  tr xs = foldl' (^+^) zeroV (map (\(DD i w) -> let !ci = c * i in realToFrac w*^(f(d+ci)^+^f(d-ci))) xs `using` nf)
 
 -- | Integration using a truncated Simpson's rule under tanh-sinh quadrature
-simpson :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-           (Double -> vDouble) -> Double -> Double -> [Result vDouble]
+simpson :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+           (Double -> vec) -> Double -> Double -> [Result vec sca]
 simpson = simpson' r0
 
 -- | Integration using a truncated Simpson's rule under tanh-sinh quadrature with buffered parallel evaluation
-parSimpson :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-              (Double -> vDouble) -> Double -> Double -> [Result vDouble]
+parSimpson :: (InnerSpace vec, sca ~ Scalar vec, Floating sca, Ord sca) =>
+              (Double -> vec) -> Double -> Double -> [Result vec sca]
 parSimpson = simpson' (parBuffer 32 rseq)
 
 data DD = DD {-# UNPACK #-} !Double {-# UNPACK #-} !Double
