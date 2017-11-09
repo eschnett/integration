@@ -1,5 +1,5 @@
-name:                integration
-version:             0.2.1
+name:                vector-integration
+version:             0.3.0
 stability:           provisional
 synopsis:            Fast robust numeric integration via tanh-sinh quadrature
 description:         Fast robust numeric integration via tanh-sinh quadrature
@@ -26,7 +26,7 @@ library
      parallel               >= 3.2 && < 3.3,
      vector-space
 
-  exposed-modules: Numeric.Integration.TanhSinh
+  exposed-modules: Numeric.Integration.VectorSpace.TanhSinh
 
   if flag(herbie)
     build-depends: HerbiePlugin >= 0.1 && < 0.2
@@ -39,5 +39,4 @@ library
 
 source-repository head
   type: git
-  location: git://github.com/ekmett/integration.git
-
+  location: git://github.com/eschnett/vector-integration.git

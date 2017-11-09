@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Numeric.Integration.TanhSinh
+-- Module      :  Numeric.Integration.VectorSpace.TanhSinh
 -- Copyright   :  (C) 2012-2015 Edward Kmett
 -- License     :  BSD-style (see the file LICENSE)
 --
@@ -39,12 +39,11 @@
 -- See John D. Cook's <http://www.johndcook.com/blog/2012/02/21/care-and-treatment-of-singularities/ "Care and Treatment of Singularities">
 -- for a sense of how more naïve quadrature schemes fare.
 ----------------------------------------------------------------------------
-module Numeric.Integration.TanhSinh
+module Numeric.Integration.VectorSpace.TanhSinh
   (
   -- * Quadrature methods
     trap -- Trapezoid rule for Tanh-Sinh quadrature
   , simpson -- Simpson's rule for Tanh-Sinh quadrature
-  , simpson1
   , trap'
   , simpson'
   , parTrap
@@ -183,9 +182,6 @@ simpson' nf f a b = go (0 :: Int) i01 (i01^*(4/3)) (magnitude (i1^-^i0)) m_huge 
 simpson :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
            (Double -> vDouble) -> Double -> Double -> [Result vDouble]
 simpson = simpson' r0
-simpson1 :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
-            (Double -> vDouble) -> Double -> Double -> [Result vDouble]
-simpson1 = simpson
 
 -- | Integration using a truncated Simpson's rule under tanh-sinh quadrature with buffered parallel evaluation
 parSimpson :: (InnerSpace vDouble, Scalar vDouble ~ Double) =>
